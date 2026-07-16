@@ -31,6 +31,11 @@ RETURNS VOID AS $$
 DECLARE
 
 BEGIN
+  PERFORM 1 
+  FROM dbo.fd_payments 
+  WHERE link = _link 
+  FOR UPDATE;
+  
   IF EXISTS(SELECT 1 FROM dbo.fb_payement_details WHERE f_payment = p_payment_id)
     DELETE FROM dbo.fd_payment_details WHERE f_payment = p_payment_id;
   END IF;
