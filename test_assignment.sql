@@ -1,11 +1,36 @@
+/*
+Требуется написать функцию dbo.ui_fp_payment_split, которая по внесенным платежам 
+в таблицу dbo.fd_payments будет расщеплять его на оплаты по конкретным счетам и услугам исходя 
+из заполненных строк в таблице **dbo.fd_bills**. 
+*/
+
 CREATE SCHEMA IF NOT EXISTS dbo;
 
-CREATE TABLE IF NOT EXISTS dbo.fp_ayment_split(
+CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
+  link SERIAL PRIMARY KEY,
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payments (
+  link SERIAL PRIMARY KEY,
+  c_number,
+  f_subscr INT NOT NULL,
+  d_date DATE NOT NULL,
+  n_amount NUMERIC(15,2)
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_bills (
+  link SERIAL PRIMARY KEY,
 );
 
+
+CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
+    p_payment_id INT,
+    p_split_type SMALL_INT
+) 
+RETURNS VOID AS $$
+DECLARE
+
+BEGIN
+
+END; 
+$$
