@@ -7,11 +7,11 @@
 CREATE SCHEMA IF NOT EXISTS dbo;
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
-  link SERIAL PRIMARY KEY,
+  id_fd_payment_details SERIAL PRIMARY KEY,
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payments (
-  link SERIAL PRIMARY KEY,
+  id_fd_payments SERIAL PRIMARY KEY,
   c_number,
   f_subscr INT NOT NULL,
   d_date DATE NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS dbo.fd_payments (
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_bills (
-  link SERIAL PRIMARY KEY,
+  id_fd_bills SERIAL PRIMARY KEY,
 );
 
 
@@ -31,6 +31,9 @@ RETURNS VOID AS $$
 DECLARE
 
 BEGIN
+  IF EXISTS(SELECT 1 FROM dbo.fb_payement_details WHERE f_payment = p_payment_id)
+    DELETE FROM dbo.fd_payment_details WHERE f_payment = p_payment_id;
+  END IF;
 
 END; 
 $$
