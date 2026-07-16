@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS dbo.fd_bills (
   id_fd_bills SERIAL PRIMARY KEY,
 );
 
-
 CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
     p_payment_id INT,
     p_split_type SMALL_INT
@@ -39,6 +38,14 @@ BEGIN
   IF EXISTS(SELECT 1 FROM dbo.fb_payement_details WHERE f_payment = p_payment_id)
     DELETE FROM dbo.fd_payment_details WHERE f_payment = p_payment_id;
   END IF;
+
+  IF p_split_type = 0 THEN
+  END IF;
+  ELSIF p_split_type = 1 THEN
+  END IF;
+
+EXCEPTION 
+    WHEN OTHERS THEN
 
 END; 
 $$
