@@ -10,28 +10,28 @@ CREATE SCHEMA IF NOT EXISTS dbo;
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
   id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
-  id_f_bill INT;
-  n_anmount NUMERIC(15,2);
+  id_f_bill INT,
+  n_anmount NUMERIC(15,2),
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payments (
   id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
-  c_number VARCHAR(50);
-  f_subscr INT NOT NULL;
-  d_date DATE NOT NULL;
-  n_amount NUMERIC(15,2);
+  c_number VARCHAR(50),
+  f_subscr INT NOT NULL,
+  d_date DATE NOT NULL,
+  n_amount NUMERIC(15,2),
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_bills (
   id_fd_bills INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
-  n_rest NUMERIC(15,2);
-  d_date DATE;
-  f_subscr INT;
+  n_rest NUMERIC(15,2),
+  d_date DATE,
+  f_subscr INT,
 );
 
 CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
-    p_payment_id INT;
-    p_split_type SMALL_INT;
+    p_payment_id INT,
+    p_split_type SMALLINT,
 ) 
 RETURNS VOID AS $$
 DECLARE
@@ -64,7 +64,7 @@ BEGIN
     WHERE id_fd_payments = p_payments_id
     FOR UPDATE;
 
-    IF OT FOUND OR _p_amount <= 0 THEN
+    IF NOT FOUND OR _p_amount <= 0 THEN
       RAISE EXCEPTION 'Платеж % не должен быть меньши или равен нулю', p_payments_id;
     END IF;
     
@@ -128,7 +128,7 @@ BEGIN
       _p_amount := _p_amount - _mounth_total_pay;
     END LOOP;
   END IF;
-
+END;
 EXCEPTION 
     WHEN OTHERS THEN
       RAISE EXCEPTION 'Ошибка: % (Код: %)', SQLERRM, SQLSTATE;
