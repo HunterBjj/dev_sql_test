@@ -1,30 +1,37 @@
 /*
-Требуется написать функцию dbo.ui_fp_payment_split, которая по внесенным платежам 
-в таблицу dbo.fd_payments будет расщеплять его на оплаты по конкретным счетам и услугам исходя 
-из заполненных строк в таблице **dbo.fd_bills**. 
+  Требуется написать функцию dbo.ui_fp_payment_split, которая по внесенным платежам 
+  в таблицу dbo.fd_payments будет расщеплять его на оплаты по конкретным счетам и услугам исходя 
+  из заполненных строк в таблице **dbo.fd_bills**. 
+  
+  P.S. Сделал более читаемый код стайл.
 */
 
 CREATE SCHEMA IF NOT EXISTS dbo;
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
-  id_fd_payment_details  INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,,
+  id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
+  id_f_bill INT;
+  n_anmount NUMERIC(15,2);
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payments (
-  id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  c_number VARCHAR(50),
-  f_subscr INT NOT NULL,
-  d_date DATE NOT NULL,
-  n_amount NUMERIC(15,2)
+  id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
+  c_number VARCHAR(50);
+  f_subscr INT NOT NULL;
+  d_date DATE NOT NULL;
+  n_amount NUMERIC(15,2);
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_bills (
-  id_fd_bills  INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,,
+  id_fd_bills INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
+  n_rest NUMERIC(15,2);
+  d_date DATE;
+  f_subscr INT;
 );
 
 CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
-    p_payment_id INT,
-    p_split_type SMALL_INT
+    p_payment_id INT;
+    p_split_type SMALL_INT;
 ) 
 RETURNS VOID AS $$
 DECLARE
@@ -111,12 +118,19 @@ BEGIN
       INSERT INTO dbo.fd_payment_details();
       WITH calc AS ()
 
-    END IF;
+      UPDATE dbo.fd_bills b
+      SET n_rest = b.n_rest - pd.n_amount
+      FROM dbo.fd_payment_details pd
+      WHERE pd.id_f_bill = b.id_fd_bills AND pd.id_f_payment = p_payment_id
+        AND b.d_date = _r.d_date;
 
-  END;
+      -- Уменьшаем нераспределенный остаток платежа.
+      _p_amount := _p_amount - _mounth_total_pay;
+    END LOOP;
+  END IF;
+
 EXCEPTION 
     WHEN OTHERS THEN
       RAISE EXCEPTION 'Ошибка: % (Код: %)', SQLERRM, SQLSTATE;
-
 END; 
 $$
