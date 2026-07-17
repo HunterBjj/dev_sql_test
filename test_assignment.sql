@@ -11,7 +11,7 @@ CREATE SCHEMA IF NOT EXISTS dbo;
 CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
   id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
   id_f_bill INT,
-  n_anmount NUMERIC(15,2),
+  n_amount NUMERIC(15,2),
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payments (
@@ -84,7 +84,7 @@ BEGIN
             RAISE EXCEPTION 'Платеж не должен быть меньше или равен нулю. _p_amount = %, _pay_part = %', _p_amount, _pay_part;
           END IF;
 
-          INSERT INTO dbo.fb_payment_details(id_f_payment, id_f_bill, n_anmount)
+          INSERT INTO dbo.fb_payment_details(id_f_payment, id_f_bill, n_amount)
           VALUES(p_payment_id, _r.id_f_bill, _pay_part);
 
           UPDATE dbo.fb_bills
