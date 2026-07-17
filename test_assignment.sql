@@ -86,6 +86,31 @@ BEGIN
     END LOOP;
 
     ELSIF p_split_type = 1 THEN
+      FOR _r IN ( 
+          SELECT d_date
+          FROM dbo.fd_bills
+          WHERE f_subscr = _p_subscr AND n_rest > 0
+          GROUP BY d_date
+          ORDER BY d_date ASC
+      ) LOOP
+      EXIT WHEN _p_amount <= 0;
+
+      -- Счетчик общего остатка на текущий месяц.
+      SELECT SUM(n_rest) INTO _month_total_rest
+      FROM dbo.fd_bills
+      WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0;
+
+      IF NOT FOUND OR _month_total_rest <= 0 THEN
+            RAISE EXCEPTION 'Платеж не должен быть меньше или равен нулю. _month_total_rest = %', _month_total_rest;
+      END IF;
+
+      _month_total_pay := LEAST(_p_amount, _month_total_rest);
+
+      -- Использую CTE, чтобы избежать накопления копеек из-за округления (остаток отдаем последней услуге).
+
+      INSERT INTO dbo.fd_payment_details();
+      WITH calc AS ()
+
     END IF;
 
   END;
