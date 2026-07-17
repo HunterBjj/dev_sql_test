@@ -57,16 +57,33 @@ BEGIN
     WHERE id_fd_payments = p_payments_id
     FOR UPDATE;
 
-    IF _p_amount <= 0 THEN
+    IF OT FOUND OR _p_amount <= 0 THEN
       RAISE EXCEPTION 'Платеж % не должен быть меньши или равен нулю', p_payments_id;
     END IF;
     
     IF p_split_type = 0 THEN
       FOR _r IN (
          SELECT id_fb_bills, n_rest
+         FROM dbo.fd_bills
+         WHERE f_subscr = _p_subcr AND n_rest > 0
+         ORDER BY d_date ASC, link ASC
       ) LOOP
-          
-    END IF;
+          EXIT WHEN _p_mount <= 0;
+
+          _pay_part := LEAST(_p_amount, r.n_rest);
+          _p_amount := _p_amount - _pay_part;
+
+          IF NOT FOUND OR _p_amount <= 0 OR _pay_part <= 0 THEN
+            RAISE EXCEPTION 'Платеж не должен быть меньше или равен нулю. _p_amount = %, _pay_part = %', _p_amount, _pay_part;
+          END IF;
+
+          INSERT INTO dbo.fb_payment_details(id_f_payment, id_f_bill, n_anmount)
+          VALUES(p_payment_id, _r.id_f_bill, _pay_part);
+
+          UPDATE dbo.fb_bills
+          SET n_rest = n_rest - _pay_part
+          WHERE id_fb_bills = _r.id_fb_bills;
+    END LOOP;
 
     ELSIF p_split_type = 1 THEN
     END IF;
@@ -74,6 +91,7 @@ BEGIN
   END;
 EXCEPTION 
     WHEN OTHERS THEN
+      RAISE EXCEPTION 'Ошибка: % (Код: %)', SQLERRM, SQLSTATE;
 
 END; 
 $$
