@@ -24,9 +24,11 @@ CREATE TABLE IF NOT EXISTS dbo.fd_payments (
 
 CREATE TABLE IF NOT EXISTS dbo.fd_bills (
   id_fd_bills INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
-  n_rest NUMERIC(15,2),
-  d_date DATE,
-  f_subscr INT
+  n_rest NUMERIC(15,2) NOT NULL,
+  d_date DATE NOT NULL,
+  f_subscr INT NOT NULL,
+  f_service INT,
+  n_anmoun NUMERIC(15,2)
 );
 
 CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
@@ -43,20 +45,6 @@ DECLARE
   _month_total_pay NUMERIC(15,2);
 BEGIN
   BEGIN
-    PERFORM 1 
-    FROM dbo.fd_payments 
-    WHERE link = _link 
-    FOR UPDATE;
-    
-    IF EXISTS(SELECT 1 FROM dbo.fb_payement_details WHERE f_payment = p_payment_id)
-      UPDATE dbo.fd_bills b
-      SET n_rest = b.n_rest + pd.n_amount
-      FROM dbo.fd_payment_details pd
-      WHERE pd.f_bill = b.link AND pd.f_payment = p_payment_id
-      FOR UPDATE OF b; 
-      
-      DELETE FROM dbo.fd_payment_details WHERE f_payment = p_payment_id;
-    END IF;
 
     SELECT f_subscr, n_amount
     INTO _p_subscr, _p_amount
@@ -66,6 +54,15 @@ BEGIN
 
     IF NOT FOUND OR _p_amount <= 0 THEN
       RAISE EXCEPTION 'Платеж % не должен быть меньши или равен нулю', p_payments_id;
+    END IF;
+    
+    IF EXISTS(SELECT 1 FROM dbo.fb_payement_details WHERE f_payment = p_payment_id)
+      UPDATE dbo.fd_bills b
+      SET n_rest = b.n_rest + pd.n_amount
+      FROM dbo.fd_payment_details pd
+      WHERE pd.f_bill = b.link AND pd.f_payment = p_payment_id
+      
+      DELETE FROM dbo.fd_payment_details WHERE f_payment = p_payment_id;
     END IF;
     
     IF p_split_type = 0 THEN
@@ -108,9 +105,7 @@ BEGIN
       WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0
       FOR UPDATE;
 
-      IF NOT FOUND OR _month_total_rest <= 0 THEN
-            RAISE EXCEPTION 'Платеж не должен быть меньше или равен нулю. _month_total_rest = %', _month_total_rest;
-      END IF;
+       CONTINUE WHEN _month_total_rest <= 0;
 
       _month_total_pay := LEAST(_p_amount, _month_total_rest);
 
