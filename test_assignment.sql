@@ -280,6 +280,7 @@ BEGIN TRANSACTION;
     SELECT * FROM dbo.fd_payment_details;
 ROLLBACK;
 
+
 /*
   Задание 2:
   Написать еще 3-и проверки, для функции **dbo.ui_fp_payment_split** и объяснить почему выбрали именно эти тестовые случаи. 
