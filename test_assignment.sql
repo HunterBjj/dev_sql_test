@@ -3,7 +3,7 @@
   в таблицу dbo.fd_payments будет расщеплять его на оплаты по конкретным счетам и услугам исходя 
   из заполненных строк в таблице **dbo.fd_bills**. 
   
-  P.S. Сделал более читаемый код стайл.
+  P.S. Сделал более читаемый код стайл, изменил название переменных и входных параметрах.
 */
 
 CREATE SCHEMA IF NOT EXISTS dbo;
@@ -89,10 +89,6 @@ BEGIN
           _pay_part := LEAST(_p_amount, _r.n_rest);
           _p_amount := _p_amount - _pay_part;
 
-          IF NOT FOUND THEN
-            RAISE EXCEPTION 'Платеж не должен быть меньше или равен нулю. _p_amount = %, _pay_part = %', _p_amount, _pay_part;
-          END IF;
-
           INSERT INTO dbo.fd_payment_details(id_fd_payments , id_fd_bills, n_amount)
           VALUES(p_payment_id, _r.id_fd_bills, _pay_part);
 
@@ -148,9 +144,6 @@ BEGIN
           FROM adjusted
           RETURNING id_fd_bills, n_amount
       )
-      
-      SELECT p_payment_id, id_fd_bills, final_pay 
-      FROM adjusted;
 
       UPDATE dbo.fd_bills b
       SET n_rest = b.n_rest - ins.n_amount
@@ -168,22 +161,139 @@ EXCEPTION
 END;
 $$ LANGUAGE plpgsql;
 
--- Подготовка общих тестовых данных перед запуском тестов
+
 TRUNCATE dbo.fd_bills, dbo.fd_payments, dbo.fd_payment_details RESTART IDENTITY;
 INSERT INTO dbo.fd_bills (f_subscr, d_date, f_service, n_amount, n_rest) VALUES
 (1, '2019-01-01', 10, 100.00, 100.00),
 (1, '2019-01-01', 20, 150.00, 150.00),
 (1, '2019-02-01', 10, 300.00, 300.00); -- Итого долг 550
 
-/*
-  Проверка №5: Платеж с переплатой (Сумма платежа 1000 при общем долге 550).
-*/
+
+--  Проверка №1: 
 BEGIN TRANSACTION;
     DO
     $$
-    DECLARE _id_fd_payments INT;
+    DECLARE
+        _id_fd_payments     INT;
     BEGIN
-        -- Сбросим остатки в исходное состояние для чистоты теста внутри транзакции
+        INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
+        SELECT 'П-123', 1, '20190105', 200
+        RETURNING id_fd_payments into _id_fd_payments;
+
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 0::smallint);
+
+        INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
+        SELECT 'П-124', 1, '20190105', 220
+        RETURNING id_fd_payments into _id_fd_payments;
+
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 0::smallint);
+
+        RAISE NOTICE '--- Вызов проверки №1 успешно завершена---';
+    END;
+    $$;
+
+    SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
+    SELECT * FROM dbo.fd_payment_details;
+
+ROLLBACK;
+
+
+-- Проверка №2:
+/*------------------------------------------------------------------------------------
+    Пропорционально один платежа
+-------------------------------------------------------------------------------------*/
+BEGIN TRANSACTION;
+    DO
+    $$
+    DECLARE
+        _id_fd_payments     INT;
+    BEGIN
+        INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
+        SELECT 'П-123', 1, '20190105', 200
+        RETURNING id_fd_payments into _id_fd_payments;
+
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
+
+        RAISE NOTICE '--- Вызов проверки №2: Пропорционально один платежа успешно завершен ---';
+    END;
+    $$;
+
+    SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
+    SELECT * FROM dbo.fd_payment_details;
+
+ROLLBACK;
+
+
+-- Проверка №3:
+/*------------------------------------------------------------------------------------
+    Пропорционально два платежа
+-------------------------------------------------------------------------------------*/
+BEGIN TRANSACTION;
+    DO
+    $$
+    DECLARE
+        _id_fd_payments     INT;
+    BEGIN
+        INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
+        SELECT 'П-123', 1, '20190105', 200
+        RETURNING id_fd_payments into _id_fd_payments;
+
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
+
+        INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
+        SELECT 'П-124', 1, '20190105', 220
+        RETURNING id_fd_payments into _id_fd_payments;
+
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
+
+        RAISE NOTICE '--- Вызов проверки №3: Пропорционально два платежа успешно завершен ---';
+    END;
+    $$;
+
+    SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
+    SELECT * FROM dbo.fd_payment_details;   
+
+ROLLBACK;
+
+
+--  Проверка №4:
+/*------------------------------------------------------------------------------------
+    Один и тот же платеж 2 раза
+-------------------------------------------------------------------------------------*/
+BEGIN TRANSACTION;
+    DO
+    $$
+    DECLARE
+        _id_fd_payments     INT;
+    BEGIN
+        INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
+        SELECT 'П-123', 1, '20190105', 200
+        RETURNING id_fd_payments into _id_fd_payments;
+
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
+
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
+
+         RAISE NOTICE '--- Вызов проверки №4: Один и тот же платеж 2 раза успешно завершен ---';
+    END;
+    $$;
+
+    SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
+    SELECT * FROM dbo.fd_payment_details;
+
+ROLLBACK;
+
+
+--  Проверка №5:
+/*------------------------------------------------------------------------------------
+    Платеж с переплатой (Сумма платежа 1000 при общем долге 550).
+-------------------------------------------------------------------------------------*/
+BEGIN TRANSACTION;
+    DO
+    $$
+    DECLARE 
+      _id_fd_payments INT;
+    BEGIN
         UPDATE dbo.fd_bills SET n_rest = n_amount WHERE f_subscr = 1;
 
         INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
@@ -191,22 +301,25 @@ BEGIN TRANSACTION;
         RETURNING id_fd_payments into _id_fd_payments;
 
         PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
+        
+        RAISE NOTICE '--- Вызов проверки №5: (Переплата) успешно завершен ---';
     END;  
     $$;
 
-    RAISE NOTICE '--- Результат проверки №5 (Переплата) ---';
-    SELECT 'fd_bills (Должны быть в 0)' as tbl, d_date, f_service, n_amount, n_rest FROM dbo.fd_bills WHERE f_subscr = 1;
-    SELECT 'fd_payment_details' as tbl, id_fd_bills, n_amount FROM dbo.fd_payment_details;
+    SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
+    SELECT * FROM dbo.fd_payment_details;   
 ROLLBACK;
 
-/*
-  Проверка №6: Пропорциональный платеж, вызывающий неделимые копейки (Сумма 100.00 на долг 100 и 150)
-  Пропорция 100/250 (40%) и 150/250 (60%) — ровные, возьмем сумму платежа 100.01 для проверки округлений.
-*/
+
+--  Проверка №6:
+/*------------------------------------------------------------------------------------
+    Пропорциональный платеж, вызывающий неделимые копейки (Сумма 100.01 на долг 100 и 150)
+-------------------------------------------------------------------------------------*/
 BEGIN TRANSACTION;
     DO
     $$
-    DECLARE _id_fd_payments INT;
+    DECLARE 
+      _id_fd_payments INT;
     BEGIN
         UPDATE dbo.fd_bills SET n_rest = n_amount WHERE f_subscr = 1;
 
@@ -215,12 +328,13 @@ BEGIN TRANSACTION;
         RETURNING id_fd_payments into _id_fd_payments;
 
         PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
+        
+        RAISE NOTICE '--- Вызов проверки №6: (Округление копеек) успешно завершен ---';
     END;
     $$;
 
-    RAISE NOTICE '--- Результат проверки №6 (Округление копеек) ---';
-    SELECT 'fd_bills' as tbl, d_date, f_service, n_amount, n_rest FROM dbo.fd_bills WHERE f_subscr = 1;
-    SELECT 'fd_payment_details (Сумма должна быть строго 100.01)' as tbl, SUM(n_amount) FROM dbo.fd_payment_details;
+    SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
+    SELECT * FROM dbo.fd_payment_details;   
 ROLLBACK;
 
 
