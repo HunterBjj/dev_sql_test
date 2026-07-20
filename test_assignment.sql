@@ -194,7 +194,6 @@ BEGIN TRANSACTION;
 
     SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
     SELECT * FROM dbo.fd_payment_details;
-
 ROLLBACK;
 
 
@@ -220,7 +219,6 @@ BEGIN TRANSACTION;
 
     SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
     SELECT * FROM dbo.fd_payment_details;
-
 ROLLBACK;
 
 
@@ -252,7 +250,6 @@ BEGIN TRANSACTION;
 
     SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
     SELECT * FROM dbo.fd_payment_details;   
-
 ROLLBACK;
 
 
@@ -280,7 +277,6 @@ BEGIN TRANSACTION;
 
     SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
     SELECT * FROM dbo.fd_payment_details;
-
 ROLLBACK;
 
 
