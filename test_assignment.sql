@@ -10,7 +10,7 @@ CREATE SCHEMA IF NOT EXISTS dbo;
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
   id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  id_fd_bill INT NOT NULL,
+  id_fd_bills INT NOT NULL,
   id_fd_payments INT NOT NULL,
   n_amount NUMERIC(15,2), 
   
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
     ON DELETE CASCADE,
     
   CONSTRAINT fk_id_f_bills 
-    FOREIGN KEY (id_fd_bill) 
+    FOREIGN KEY (id_fd_bills) 
     REFERENCES dbo.fd_bills (id_fd_bills) 
     ON DELETE CASCADE
 );
@@ -62,40 +62,36 @@ BEGIN
     FROM dbo.fd_payments
     WHERE id_fd_payments = p_payment_id
     FOR UPDATE;
-
-    IF NOT FOUND OR _p_amount <= 0 THEN
-      RAISE EXCEPTION 'Платеж % не должен быть меньши или равен нулю', p_payment_id;
-    END IF;
     
     IF EXISTS(SELECT 1 FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id) THEN
       UPDATE dbo.fd_bills b
       SET n_rest = b.n_rest + pd.n_amount
       FROM dbo.fd_payment_details pd
-      WHERE pd.f_bill = b.id_fd_bills AND pd.id_fd_payments = p_payment_id
+      WHERE pd.id_fd_bills = b.id_fd_bills AND pd.id_fd_payments = p_payment_id;
       
       DELETE FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id;
     END IF;
     
     IF p_split_type = 0 THEN
       FOR _r IN (
-         SELECT id_fb_bills, n_rest
+         SELECT id_fd_bills , n_rest
          FROM dbo.fd_bills
          WHERE f_subscr = _p_subscr AND n_rest > 0
-         ORDER BY d_date ASC;
+         ORDER BY d_date ASC
       ) LOOP
           EXIT WHEN _p_amount <= 0;
 
           _pay_part := LEAST(_p_amount, _r.n_rest);
           _p_amount := _p_amount - _pay_part;
 
-          IF NOT FOUND OR _p_amount <= 0 OR _pay_part <= 0 THEN
+          IF NOT FOUND THEN
             RAISE EXCEPTION 'Платеж не должен быть меньше или равен нулю. _p_amount = %, _pay_part = %', _p_amount, _pay_part;
           END IF;
 
-          INSERT INTO dbo.fd_payment_details(id_f_payment, id_f_bill, n_amount)
-          VALUES(p_payment_id, _r.id_f_bill, _pay_part);
+          INSERT INTO dbo.fd_payment_details(id_fd_payments , id_fd_bills, n_amount)
+          VALUES(p_payment_id, _r.id_fd_bills, _pay_part);
 
-          UPDATE dbo.fb_bills
+          UPDATE dbo.fd_bills
           SET n_rest = n_rest - _pay_part
           WHERE id_fd_bills = _r.id_fd_bills;
     END LOOP;
@@ -106,7 +102,7 @@ BEGIN
           FROM dbo.fd_bills
           WHERE f_subscr = _p_subscr AND n_rest > 0
           GROUP BY d_date
-          ORDER BY d_date ASC;
+          ORDER BY d_date ASC
       ) LOOP
       EXIT WHEN _p_amount <= 0;
 
@@ -186,13 +182,13 @@ BEGIN TRANSACTION;
         SELECT 'П-OVERPAY', 1, '20190105', 1000.00
         RETURNING id_fd_payments into _id_fd_payments;
 
-        PERFORM dbo.ui_fp_payment_split (p_fd_payments_id := _id_fd_payments, p_split_type := 1::smallint);
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
     END;  
     $$;
 
     RAISE NOTICE '--- Результат проверки №5 (Переплата) ---';
     SELECT 'fd_bills (Должны быть в 0)' as tbl, d_date, f_service, n_amount, n_rest FROM dbo.fd_bills WHERE f_subscr = 1;
-    SELECT 'fd_payment_details' as tbl, f_bill, n_amount FROM dbo.fd_payment_details;
+    SELECT 'fd_payment_details' as tbl, id_fd_bills, n_amount FROM dbo.fd_payment_details;
 ROLLBACK;
 
 /*
@@ -210,7 +206,7 @@ BEGIN TRANSACTION;
         SELECT 'П-ROUND', 1, '20190105', 100.01
         RETURNING id_fd_payments into _id_fd_payments;
 
-        PERFORM dbo.ui_fp_payment_split (p_fd_payments_id := _id_fd_payments, p_split_type := 1::smallint);
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
     END;
     $$;
 
