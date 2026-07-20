@@ -8,23 +8,6 @@
 
 CREATE SCHEMA IF NOT EXISTS dbo;
 
-CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
-  id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  id_fd_bills INT NOT NULL,
-  id_fd_payments INT NOT NULL,
-  n_amount NUMERIC(15,2), 
-  
-  CONSTRAINT fk_details_payments 
-    FOREIGN KEY (id_fd_payments) 
-    REFERENCES dbo.fd_payments (id_fd_payments) 
-    ON DELETE CASCADE,
-    
-  CONSTRAINT fk_id_f_bills 
-    FOREIGN KEY (id_fd_bills) 
-    REFERENCES dbo.fd_bills (id_fd_bills) 
-    ON DELETE CASCADE
-);
-
 CREATE TABLE IF NOT EXISTS dbo.fd_payments (
   id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   c_number VARCHAR(50) NOT NULL,
@@ -40,6 +23,23 @@ CREATE TABLE IF NOT EXISTS dbo.fd_bills (
   f_subscr INT NOT NULL,
   f_service INT,
   n_amount NUMERIC(15,2)
+);
+
+CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
+  id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id_fd_bills INT NOT NULL,
+  id_fd_payments INT NOT NULL,
+  n_amount NUMERIC(15,2), 
+  
+  CONSTRAINT fk_details_payments 
+    FOREIGN KEY (id_fd_payments) 
+    REFERENCES dbo.fd_payments (id_fd_payments) 
+    ON DELETE CASCADE,
+    
+  CONSTRAINT fk_id_f_bills 
+    FOREIGN KEY (id_fd_bills) 
+    REFERENCES dbo.fd_bills (id_fd_bills) 
+    ON DELETE CASCADE
 );
 
 CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
@@ -114,7 +114,7 @@ BEGIN
       -- Счетчик общего остатка на текущий месяц.
       SELECT SUM(n_rest) INTO _month_total_rest
       FROM dbo.fd_bills
-      WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0
+      WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0;
 
        CONTINUE WHEN _month_total_rest <= 0;
 
