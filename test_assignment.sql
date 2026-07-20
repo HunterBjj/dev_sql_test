@@ -9,13 +9,13 @@
 CREATE SCHEMA IF NOT EXISTS dbo;
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
-  id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
+  id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id_f_bill INT,
   n_amount NUMERIC(15,2)
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payments (
-  id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
+  id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   c_number VARCHAR(50),
   f_subscr INT NOT NULL,
   d_date DATE NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS dbo.fd_payments (
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_bills (
-  id_fd_bills INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY;
+  id_fd_bills INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   n_rest NUMERIC(15,2) NOT NULL,
   d_date DATE NOT NULL,
   f_subscr INT NOT NULL,
@@ -56,13 +56,13 @@ BEGIN
       RAISE EXCEPTION 'Платеж % не должен быть меньши или равен нулю', p_payments_id;
     END IF;
     
-    IF EXISTS(SELECT 1 FROM dbo.fb_payement_details WHERE f_payment = p_payment_id)
+    IF EXISTS(SELECT 1 FROM dbo.fb_payement_details WHERE id_fd_payments = p_payment_id)
       UPDATE dbo.fd_bills b
       SET n_rest = b.n_rest + pd.n_amount
       FROM dbo.fd_payment_details pd
-      WHERE pd.f_bill = b.link AND pd.f_payment = p_payment_id
+      WHERE pd.f_bill = b.id_fb_bills AND pd.id_fd_payments = p_payment_id
       
-      DELETE FROM dbo.fd_payment_details WHERE f_payment = p_payment_id;
+      DELETE FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id;
     END IF;
     
     IF p_split_type = 0 THEN
@@ -70,7 +70,7 @@ BEGIN
          SELECT id_fb_bills, n_rest
          FROM dbo.fd_bills
          WHERE f_subscr = _p_subcr AND n_rest > 0
-         ORDER BY d_date ASC, link ASC
+         ORDER BY d_date ASC, id_fb_bills ASC
       ) LOOP
           EXIT WHEN _p_mount <= 0;
 
@@ -95,7 +95,7 @@ BEGIN
           FROM dbo.fd_bills
           WHERE f_subscr = _p_subscr AND n_rest > 0
           GROUP BY d_date
-          ORDER BY d_date ASC
+          ORDER BY d_date ASC, id_fb_bills ASC
       ) LOOP
       EXIT WHEN _p_amount <= 0;
 
@@ -116,9 +116,7 @@ BEGIN
           SELECT 
               id_fd_bills,
               n_rest,
-              -- Шаг 1: Считаем базовую округленную долю услуги
               FLOOR((n_rest / _month_total_rest) * _month_total_pay * 100) / 100 AS calc_pay,
-              -- Порядковый номер строки с конца (у первой строки rn = 1)
               ROW_NUMBER() OVER (ORDER BY id_fd_bills DESC) as rn
           FROM dbo.fd_bills
           WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0
@@ -127,13 +125,10 @@ BEGIN
           SELECT 
               id_fd_bills,
               CASE 
-                  -- Шаг 2: Если строка ПЕРВАЯ с конца (то есть самая последняя услуга),
-                  -- отдаем ей весь оставшийся лимит этого месяца.
                   WHEN rn = 1 THEN _month_total_pay - COALESCE(
                       SUM(calc_pay) OVER (ORDER BY rn DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 
                       0
                   )
-                  -- Для всех остальных строк оставляем стандартно посчитанную долю
                   ELSE calc_pay
               END AS final_pay
           FROM calc
@@ -143,7 +138,6 @@ BEGIN
       FROM adjusted
       FOR UPDATE;
 
-      -- Уменьшаем нераспределенный остаток платежа.
       _p_amount := _p_amount - _mounth_total_pay;
     END LOOP;
   END IF;
@@ -152,8 +146,15 @@ END;
 EXCEPTION 
     WHEN OTHERS THEN
       RAISE EXCEPTION 'Ошибка: % (Код: %)', SQLERRM, SQLSTATE;
-END; 
+END;
 $$
+
+-- Подготовка общих тестовых данных перед запуском тестов
+TRUNCATE dbo.fd_bills, dbo.fd_payments, dbo.fd_payment_details RESTART IDENTITY;
+INSERT INTO dbo.fd_bills (f_subscr, d_date, f_service, n_amount, n_rest) VALUES
+(1, '2019-01-01', 10, 100.00, 100.00),
+(1, '2019-01-01', 20, 150.00, 150.00),
+(1, '2019-02-01', 10, 300.00, 300.00); -- Итого долг 550
 
 
 /*
