@@ -62,6 +62,11 @@ BEGIN
     FROM dbo.fd_payments
     WHERE id_fd_payments = p_payment_id
     FOR UPDATE;
+
+    PERFORM 1 
+    FROM dbo.fd_bills 
+    WHERE f_subscr = _p_subscr 
+    FOR UPDATE;
     
     IF EXISTS(SELECT 1 FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id) THEN
       UPDATE dbo.fd_bills b
@@ -110,14 +115,11 @@ BEGIN
       SELECT SUM(n_rest) INTO _month_total_rest
       FROM dbo.fd_bills
       WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0
-      FOR UPDATE;
 
        CONTINUE WHEN _month_total_rest <= 0;
 
       _month_total_pay := LEAST(_p_amount, _month_total_rest);
 
-      -- Использую CTE, чтобы избежать накопления копеек из-за округления (остаток отдаем последней услуге).
-      INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, n_amount)
       WITH calc AS (
           SELECT 
               id_fd_bills,
@@ -132,21 +134,27 @@ BEGIN
               id_fd_bills,
               CASE 
                   WHEN rn = 1 THEN _month_total_pay - COALESCE(
-                      SUM(calc_pay) OVER (ORDER BY rn DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 
+                      SUM(FLOOR((n_rest / _month_total_rest) * _month_total_pay * 100) / 100) 
+                      OVER (ORDER BY rn DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 
                       0
                   )
                   ELSE calc_pay
               END AS final_pay
           FROM calc
+      ),
+      inserted_rows AS (
+          INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, n_amount)
+          SELECT p_payment_id, id_fd_bills, final_pay 
+          FROM adjusted
+          RETURNING id_fd_bills, n_amount
       )
       
       SELECT p_payment_id, id_fd_bills, final_pay 
-      FROM adjusted
-      FOR UPDATE;
+      FROM adjusted;
 
       UPDATE dbo.fd_bills b
       SET n_rest = b.n_rest - ins.n_amount
-      FROM inserted ins
+      FROM inserted_rows ins
       WHERE b.id_fd_bills = ins.id_fd_bills;
 
       _p_amount := _p_amount - _month_total_pay;
@@ -158,7 +166,7 @@ EXCEPTION
     WHEN OTHERS THEN
       RAISE EXCEPTION 'Ошибка: % (Код: %)', SQLERRM, SQLSTATE;
 END;
-$$
+$$ LANGUAGE plpgsql;
 
 -- Подготовка общих тестовых данных перед запуском тестов
 TRUNCATE dbo.fd_bills, dbo.fd_payments, dbo.fd_payment_details RESTART IDENTITY;
