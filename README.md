@@ -3,7 +3,7 @@
 ###  <p align="center"> Тестовое задание </p>
 
 
-### <p align="center"> Компания: «ООО ИСЕРВ» </p>
+### <p align="center"> Компания: «[ООО ИСЕРВ](https://www.it-serv.ru/)»</p>
 
 
 ### <p align="center"> Позиция: Разработчик SQL </p>
