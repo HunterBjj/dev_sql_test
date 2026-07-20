@@ -72,7 +72,7 @@ BEGIN
          WHERE f_subscr = _p_subcr AND n_rest > 0
          ORDER BY d_date ASC, id_fb_bills ASC
       ) LOOP
-          EXIT WHEN _p_mount <= 0;
+          EXIT WHEN _p_amount <= 0;
 
           _pay_part := LEAST(_p_amount, r.n_rest);
           _p_amount := _p_amount - _pay_part;
@@ -155,7 +155,6 @@ INSERT INTO dbo.fd_bills (f_subscr, d_date, f_service, n_amount, n_rest) VALUES
 (1, '2019-01-01', 10, 100.00, 100.00),
 (1, '2019-01-01', 20, 150.00, 150.00),
 (1, '2019-02-01', 10, 300.00, 300.00); -- Итого долг 550
-
 
 /*
   Проверка №5: Платеж с переплатой (Сумма платежа 1000 при общем долге 550).
