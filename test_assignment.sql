@@ -206,7 +206,7 @@ BEGIN TRANSACTION;
     DO
     $$
     DECLARE
-        _id_fd_payments     INT;
+        _id_fd_payments INT;
     BEGIN
         INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
         SELECT 'П-123', 1, '20190105', 200
@@ -231,7 +231,7 @@ BEGIN TRANSACTION;
     DO
     $$
     DECLARE
-        _id_fd_payments     INT;
+        _id_fd_payments INT;
     BEGIN
         INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
         SELECT 'П-123', 1, '20190105', 200
@@ -262,7 +262,7 @@ BEGIN TRANSACTION;
     DO
     $$
     DECLARE
-        _id_fd_payments     INT;
+        _id_fd_payments INT;
     BEGIN
         INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
         SELECT 'П-123', 1, '20190105', 200
@@ -286,7 +286,7 @@ ROLLBACK;
   Написать еще 3-и проверки, для функции **dbo.ui_fp_payment_split** и объяснить почему выбрали именно эти тестовые случаи. 
   
   P.S. Выбрал тест с проверкой на округление, считаю, что проверка на точность необходимо для данной программе. Также надо проверить, когда просиходит переплата, 
-  чтобы отработать это событие, так как вероятность этого намного выше, как и предыдущего.
+  чтобы отработать это событие, так как вероятность этого намного выше, как и предыдущего. Тест с проверкой на один и тот же платеж тоже более вероятное событие.
 */
 
 --  Проверка №5:
@@ -343,6 +343,28 @@ BEGIN TRANSACTION;
 ROLLBACK;
 
 
+--  Проверка №6:
+/*------------------------------------------------------------------------------------
+    Один и тот же платеж 2 раза (проверка отката предыдущего распределения)
+-------------------------------------------------------------------------------------*/
+BEGIN TRANSACTION;
+    DO
+    $$
+    DECLARE
+        _id_fd_payments INT;
+    BEGIN
+        INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
+        SELECT 'П-123', 1, '20190105', 200
+        RETURNING id_fd_payments into _id_fd_payments;
 
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 0::smallint);
+        
+        PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
 
+        RAISE NOTICE '--- Вызов проверки №6: Один и тот же платеж 2 раза успешно завершен ---';
+    END;
+    $$;
 
+    SELECT * FROM dbo.fd_bills WHERE f_subscr = 1;
+    SELECT * FROM dbo.fd_payment_details;   
+ROLLBACK;
