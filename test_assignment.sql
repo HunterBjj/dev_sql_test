@@ -10,13 +10,24 @@ CREATE SCHEMA IF NOT EXISTS dbo;
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
   id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  id_f_bill INT,
-  n_amount NUMERIC(15,2)
+  id_fd_bill INT NOT NULL,
+  id_fd_payments INT NOT NULL,
+  n_amount NUMERIC(15,2), 
+  
+  CONSTRAINT fk_details_payments 
+    FOREIGN KEY (id_fd_payments) 
+    REFERENCES dbo.fd_payments (id_fd_payments) 
+    ON DELETE CASCADE,
+    
+  CONSTRAINT fk_id_f_bills 
+    FOREIGN KEY (id_fd_bill) 
+    REFERENCES dbo.fd_bills (id_fd_bills) 
+    ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS dbo.fd_payments (
   id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  c_number VARCHAR(50),
+  c_number VARCHAR(50) NOT NULL,
   f_subscr INT NOT NULL,
   d_date DATE NOT NULL,
   n_amount NUMERIC(15,2)
@@ -28,7 +39,7 @@ CREATE TABLE IF NOT EXISTS dbo.fd_bills (
   d_date DATE NOT NULL,
   f_subscr INT NOT NULL,
   f_service INT,
-  n_anmoun NUMERIC(15,2)
+  n_amount NUMERIC(15,2)
 );
 
 CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
@@ -49,18 +60,18 @@ BEGIN
     SELECT f_subscr, n_amount
     INTO _p_subscr, _p_amount
     FROM dbo.fd_payments
-    WHERE id_fd_payments = p_payments_id
+    WHERE id_fd_payments = p_payment_id
     FOR UPDATE;
 
     IF NOT FOUND OR _p_amount <= 0 THEN
-      RAISE EXCEPTION 'Платеж % не должен быть меньши или равен нулю', p_payments_id;
+      RAISE EXCEPTION 'Платеж % не должен быть меньши или равен нулю', p_payment_id;
     END IF;
     
-    IF EXISTS(SELECT 1 FROM dbo.fb_payement_details WHERE id_fd_payments = p_payment_id)
+    IF EXISTS(SELECT 1 FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id) THEN
       UPDATE dbo.fd_bills b
       SET n_rest = b.n_rest + pd.n_amount
       FROM dbo.fd_payment_details pd
-      WHERE pd.f_bill = b.id_fb_bills AND pd.id_fd_payments = p_payment_id
+      WHERE pd.f_bill = b.id_fd_bills AND pd.id_fd_payments = p_payment_id
       
       DELETE FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id;
     END IF;
@@ -69,24 +80,24 @@ BEGIN
       FOR _r IN (
          SELECT id_fb_bills, n_rest
          FROM dbo.fd_bills
-         WHERE f_subscr = _p_subcr AND n_rest > 0
+         WHERE f_subscr = _p_subscr AND n_rest > 0
          ORDER BY d_date ASC;
       ) LOOP
           EXIT WHEN _p_amount <= 0;
 
-          _pay_part := LEAST(_p_amount, r.n_rest);
+          _pay_part := LEAST(_p_amount, _r.n_rest);
           _p_amount := _p_amount - _pay_part;
 
           IF NOT FOUND OR _p_amount <= 0 OR _pay_part <= 0 THEN
             RAISE EXCEPTION 'Платеж не должен быть меньше или равен нулю. _p_amount = %, _pay_part = %', _p_amount, _pay_part;
           END IF;
 
-          INSERT INTO dbo.fb_payment_details(id_f_payment, id_f_bill, n_amount)
+          INSERT INTO dbo.fd_payment_details(id_f_payment, id_f_bill, n_amount)
           VALUES(p_payment_id, _r.id_f_bill, _pay_part);
 
           UPDATE dbo.fb_bills
           SET n_rest = n_rest - _pay_part
-          WHERE id_fb_bills = _r.id_fb_bills;
+          WHERE id_fd_bills = _r.id_fd_bills;
     END LOOP;
 
    ELSIF p_split_type = 1 THEN
@@ -137,7 +148,12 @@ BEGIN
       FROM adjusted
       FOR UPDATE;
 
-      _p_amount := _p_amount - _mounth_total_pay;
+      UPDATE dbo.fd_bills b
+      SET n_rest = b.n_rest - ins.n_amount
+      FROM inserted ins
+      WHERE b.id_fd_bills = ins.id_fd_bills;
+
+      _p_amount := _p_amount - _month_total_pay;
     END LOOP;
   END IF;
 END;
@@ -161,7 +177,7 @@ INSERT INTO dbo.fd_bills (f_subscr, d_date, f_service, n_amount, n_rest) VALUES
 BEGIN TRANSACTION;
     DO
     $$
-    DECLARE _link INT;
+    DECLARE _id_fd_payments INT;
     BEGIN
         -- Сбросим остатки в исходное состояние для чистоты теста внутри транзакции
         UPDATE dbo.fd_bills SET n_rest = n_amount WHERE f_subscr = 1;
@@ -170,7 +186,7 @@ BEGIN TRANSACTION;
         SELECT 'П-OVERPAY', 1, '20190105', 1000.00
         RETURNING id_fd_payments into _id_fd_payments;
 
-        PERFORM dbo.ui_fp_payment_split (_id_fd_payments := p_fd_payments_id, _n_type := 1::smallint);
+        PERFORM dbo.ui_fp_payment_split (p_fd_payments_id := _id_fd_payments, p_split_type := 1::smallint);
     END;  
     $$;
 
@@ -186,7 +202,7 @@ ROLLBACK;
 BEGIN TRANSACTION;
     DO
     $$
-    DECLARE _link INT;
+    DECLARE _id_fd_payments INT;
     BEGIN
         UPDATE dbo.fd_bills SET n_rest = n_amount WHERE f_subscr = 1;
 
@@ -194,7 +210,7 @@ BEGIN TRANSACTION;
         SELECT 'П-ROUND', 1, '20190105', 100.01
         RETURNING id_fd_payments into _id_fd_payments;
 
-        PERFORM dbo.ui_fp_payment_split (_id_fd_payments := p_fd_payments_id, _n_type := 1::smallint);
+        PERFORM dbo.ui_fp_payment_split (p_fd_payments_id := _id_fd_payments, p_split_type := 1::smallint);
     END;
     $$;
 
