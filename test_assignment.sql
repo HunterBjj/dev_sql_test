@@ -70,7 +70,7 @@ BEGIN
          SELECT id_fb_bills, n_rest
          FROM dbo.fd_bills
          WHERE f_subscr = _p_subcr AND n_rest > 0
-         ORDER BY d_date ASC, id_fb_bills ASC
+         ORDER BY d_date ASC;
       ) LOOP
           EXIT WHEN _p_amount <= 0;
 
@@ -95,7 +95,7 @@ BEGIN
           FROM dbo.fd_bills
           WHERE f_subscr = _p_subscr AND n_rest > 0
           GROUP BY d_date
-          ORDER BY d_date ASC, id_fb_bills ASC
+          ORDER BY d_date ASC;
       ) LOOP
       EXIT WHEN _p_amount <= 0;
 
@@ -110,8 +110,7 @@ BEGIN
       _month_total_pay := LEAST(_p_amount, _month_total_rest);
 
       -- Использую CTE, чтобы избежать накопления копеек из-за округления (остаток отдаем последней услуге).
-      INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, n_amount);
-
+      INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, n_amount)
       WITH calc AS (
           SELECT 
               id_fd_bills,
