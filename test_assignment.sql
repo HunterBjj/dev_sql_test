@@ -2,7 +2,7 @@
   Задание 1:
   Требуется написать функцию dbo.ui_fp_payment_split, которая по внесенным платежам 
   в таблицу dbo.fd_payments будет расщеплять его на оплаты по конкретным счетам и услугам исходя 
-  из заполненных строк в таблице **dbo.fd_bills**. 
+  из заполненных строк в таблице dbo.fd_bills. 
   
   P.S. Сделал более читаемый код стайл, изменил название переменных и входных параметрах.
 */
@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS dbo.fd_payments CASCADE;
 DROP TABLE IF EXISTS dbo.fd_bills CASCADE;
 DROP TABLE IF EXISTS dbo.sd_subscrs CASCADE;
 
--- Таблица лицевых счетов
+-- Таблица лицевых счетов.
 CREATE TABLE dbo.sd_subscrs (
   id_sd_subscrs INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   c_number TEXT NOT NULL UNIQUE,
@@ -23,7 +23,7 @@ CREATE TABLE dbo.sd_subscrs (
   d_birthdate DATE NOT NULL
 );
 
--- Таблица платежей
+-- Таблица платежей.
 CREATE TABLE dbo.fd_payments (
   id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   c_number TEXT NULL,
@@ -35,7 +35,7 @@ CREATE TABLE dbo.fd_payments (
         FOREIGN KEY (f_subscr) REFERENCES dbo.sd_subscrs (id_sd_subscrs) ON DELETE CASCADE
 );
 
--- Таблица счетов
+-- Таблица счетов.
 CREATE TABLE dbo.fd_bills (
   id_fd_bills INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   c_number TEXT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE dbo.fd_bills (
         FOREIGN KEY (f_subscr) REFERENCES dbo.sd_subscrs (id_sd_subscrs) ON DELETE CASCADE
 );
 
--- Таблица детализации платежей
+-- Таблица детализации платежей.
 CREATE TABLE dbo.fd_payment_details (
   id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id_fd_bills INT NOT NULL,
@@ -194,11 +194,14 @@ INSERT INTO dbo.fd_bills (f_subscr, d_date, c_sale_items, n_amount, n_rest) VALU
 
 
 --  Проверка №1: 
+/*------------------------------------------------------------------------------------
+    Последовательно несколько платежей.
+-------------------------------------------------------------------------------------*/
 BEGIN TRANSACTION;
     DO
     $$
     DECLARE
-        _id_fd_payments     INT;
+        _id_fd_payments INT;
     BEGIN
         INSERT INTO dbo.fd_payments (c_number, f_subscr, d_date, n_amount)
         SELECT 'П-123', 1, '20190105', 200
@@ -223,7 +226,7 @@ ROLLBACK;
 
 -- Проверка №2:
 /*------------------------------------------------------------------------------------
-    Пропорционально один платежа
+    Пропорционально один платежа.
 -------------------------------------------------------------------------------------*/
 BEGIN TRANSACTION;
     DO
@@ -248,7 +251,7 @@ ROLLBACK;
 
 -- Проверка №3:
 /*------------------------------------------------------------------------------------
-    Пропорционально два платежа
+    Пропорционально два платежа.
 -------------------------------------------------------------------------------------*/
 BEGIN TRANSACTION;
     DO
@@ -279,7 +282,7 @@ ROLLBACK;
 
 --  Проверка №4:
 /*------------------------------------------------------------------------------------
-    Один и тот же платеж 2 раза
+    Один и тот же платеж 2 раза.
 -------------------------------------------------------------------------------------*/
 BEGIN TRANSACTION;
     DO
@@ -340,7 +343,7 @@ ROLLBACK;
 
 --  Проверка №6:
 /*------------------------------------------------------------------------------------
-    Пропорциональный платеж, вызывающий неделимые копейки (Сумма 100.01 на долг 100 и 150)
+    Пропорциональный платеж, вызывающий неделимые копейки (Сумма 100.01 на долг 100 и 150).
 -------------------------------------------------------------------------------------*/
 BEGIN TRANSACTION;
     DO
@@ -367,7 +370,7 @@ ROLLBACK;
 
 --  Проверка №7:
 /*------------------------------------------------------------------------------------
-    Один и тот же платеж 2 раза (проверка отката предыдущего распределения)
+    Один и тот же платеж 2 раза (проверка отката предыдущего распределения).
 -------------------------------------------------------------------------------------*/
 BEGIN TRANSACTION;
     DO
