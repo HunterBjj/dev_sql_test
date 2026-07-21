@@ -9,38 +9,58 @@
 
 CREATE SCHEMA IF NOT EXISTS dbo;
 
-CREATE TABLE IF NOT EXISTS dbo.fd_payments (
+DROP TABLE IF EXISTS dbo.fd_payment_details CASCADE;
+DROP TABLE IF EXISTS dbo.fd_payments CASCADE;
+DROP TABLE IF EXISTS dbo.fd_bills CASCADE;
+DROP TABLE IF EXISTS dbo.sd_subscrs CASCADE;
+
+-- Таблица лицевых счетов
+CREATE TABLE dbo.sd_subscrs (
+  id_sd_subscrs INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  c_number TEXT NOT NULL UNIQUE,
+  c_firstname TEXT NOT NULL,
+  c_secondname TEXT NOT NULL,
+  d_birthdate DATE NOT NULL
+);
+
+-- Таблица платежей
+CREATE TABLE dbo.fd_payments (
   id_fd_payments INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  c_number VARCHAR(50) NOT NULL,
+  c_number TEXT NULL,
   f_subscr INT NOT NULL,
-  d_date DATE NOT NULL,
-  n_amount NUMERIC(15,2)
+  d_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  n_amount NUMERIC(19,4) NOT NULL,
+  
+  CONSTRAINT fk_fd_payments_sd_subscrs
+        FOREIGN KEY (f_subscr) REFERENCES dbo.sd_subscrs (id_sd_subscrs) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS dbo.fd_bills (
+-- Таблица счетов
+CREATE TABLE dbo.fd_bills (
   id_fd_bills INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  n_rest NUMERIC(15,2) NOT NULL,
-  d_date DATE NOT NULL,
+  c_number TEXT NULL,
   f_subscr INT NOT NULL,
-  f_service INT,
-  n_amount NUMERIC(15,2)
+  c_sale_items TEXT NOT NULL, -- Услуга
+  d_date DATE NOT NULL,
+  n_amount NUMERIC(19,4) NOT NULL,
+  n_rest NUMERIC(19,4) NOT NULL, -- Твое имя ключа/остатка
+  
+  CONSTRAINT fk_fd_bills_sd_subscrs
+        FOREIGN KEY (f_subscr) REFERENCES dbo.sd_subscrs (id_sd_subscrs) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS dbo.fd_payment_details(
+-- Таблица детализации платежей
+CREATE TABLE dbo.fd_payment_details (
   id_fd_payment_details INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   id_fd_bills INT NOT NULL,
   id_fd_payments INT NOT NULL,
-  n_amount NUMERIC(15,2), 
+  c_sale_items TEXT NOT NULL,
+  n_amount NUMERIC(19,4) NOT NULL, 
   
   CONSTRAINT fk_details_payments 
-    FOREIGN KEY (id_fd_payments) 
-    REFERENCES dbo.fd_payments (id_fd_payments) 
-    ON DELETE CASCADE,
-    
+    FOREIGN KEY (id_fd_payments) REFERENCES dbo.fd_payments (id_fd_payments) ON DELETE CASCADE,
   CONSTRAINT fk_id_f_bills 
-    FOREIGN KEY (id_fd_bills) 
-    REFERENCES dbo.fd_bills (id_fd_bills) 
-    ON DELETE CASCADE
+    FOREIGN KEY (id_fd_bills) REFERENCES dbo.fd_bills (id_fd_bills) ON DELETE CASCADE
 );
 
 CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
@@ -50,11 +70,11 @@ CREATE OR REPLACE FUNCTION dbo.ui_fp_payment_split(
 RETURNS VOID AS $$
 DECLARE
   _p_subscr INT;
-  _p_amount NUMERIC(15,2);
+  _p_amount NUMERIC(19,4);
   _r RECORD;
-  _pay_part NUMERIC(15,2);
-  _month_total_rest NUMERIC(15,2);
-  _month_total_pay NUMERIC(15,2);
+  _pay_part NUMERIC(19,4);
+  _month_total_rest NUMERIC(19,4);
+  _month_total_pay NUMERIC(19,4);
 BEGIN
   BEGIN
 
@@ -80,7 +100,7 @@ BEGIN
     
     IF p_split_type = 0 THEN
       FOR _r IN (
-         SELECT id_fd_bills , n_rest
+         SELECT id_fd_bills , n_rest, c_sale_items
          FROM dbo.fd_bills
          WHERE f_subscr = _p_subscr AND n_rest > 0
          ORDER BY d_date ASC
@@ -90,8 +110,8 @@ BEGIN
           _pay_part := LEAST(_p_amount, _r.n_rest);
           _p_amount := _p_amount - _pay_part;
 
-          INSERT INTO dbo.fd_payment_details(id_fd_payments , id_fd_bills, n_amount)
-          VALUES(p_payment_id, _r.id_fd_bills, _pay_part);
+          INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, c_sale_items, n_amount)
+          VALUES(p_payment_id, _r.id_fd_bills, _r.c_sale_items, _pay_part);
 
           UPDATE dbo.fd_bills
           SET n_rest = n_rest - _pay_part
@@ -120,8 +140,9 @@ BEGIN
       WITH calc AS (
           SELECT 
               id_fd_bills,
+              c_sale_items,
               n_rest,
-              FLOOR((n_rest / _month_total_rest) * _month_total_pay * 100) / 100 AS calc_pay,
+              ROUND((n_rest / _month_total_rest) * _month_total_pay, 4) AS calc_pay,
               ROW_NUMBER() OVER (ORDER BY id_fd_bills DESC) as rn
           FROM dbo.fd_bills
           WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0
@@ -129,10 +150,10 @@ BEGIN
       adjusted AS (
           SELECT 
               id_fd_bills,
+              c_sale_items,
               CASE 
                   WHEN rn = 1 THEN _month_total_pay - COALESCE(
-                      SUM(FLOOR((n_rest / _month_total_rest) * _month_total_pay * 100) / 100) 
-                      OVER (ORDER BY rn DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 
+                      SUM(calc_pay) OVER (ORDER BY rn DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 
                       0
                   )
                   ELSE calc_pay
@@ -140,8 +161,8 @@ BEGIN
           FROM calc
       ),
       inserted_rows AS (
-          INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, n_amount)
-          SELECT p_payment_id, id_fd_bills, final_pay 
+          INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, c_sale_items, n_amount)
+          SELECT p_payment_id, id_fd_bills, c_sale_items, final_pay 
           FROM adjusted
           RETURNING id_fd_bills, n_amount
       )
@@ -163,11 +184,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 
-TRUNCATE dbo.fd_bills, dbo.fd_payments, dbo.fd_payment_details RESTART IDENTITY;
-INSERT INTO dbo.fd_bills (f_subscr, d_date, f_service, n_amount, n_rest) VALUES
-(1, '2019-01-01', 10, 100.00, 100.00),
-(1, '2019-01-01', 20, 150.00, 150.00),
-(1, '2019-02-01', 10, 300.00, 300.00); -- Итого долг 550
+TRUNCATE dbo.fd_bills, dbo.fd_payments, dbo.fd_payment_details, dbo.sd_subscrs RESTART IDENTITY CASCADE;
+INSERT INTO dbo.sd_subscrs (c_number, c_firstname, c_secondname, d_birthdate)
+VALUES ('ЛС-001', 'Иван', 'Иванов', '1990-01-01');
+INSERT INTO dbo.fd_bills (f_subscr, d_date, c_sale_items, n_amount, n_rest) VALUES
+(1, '2019-01-01', 'Электроэнергия', 100.00, 100.00),
+(1, '2019-01-01', 'Водоснабжение',  150.00, 150.00),
+(1, '2019-02-01', 'Отопление',      300.00, 300.00);
 
 
 --  Проверка №1: 
@@ -269,7 +292,6 @@ BEGIN TRANSACTION;
         RETURNING id_fd_payments into _id_fd_payments;
 
         PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
-
         PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
 
          RAISE NOTICE '--- Вызов проверки №4: Один и тот же платеж 2 раза успешно завершен ---';
@@ -343,7 +365,7 @@ BEGIN TRANSACTION;
 ROLLBACK;
 
 
---  Проверка №6:
+--  Проверка №7:
 /*------------------------------------------------------------------------------------
     Один и тот же платеж 2 раза (проверка отката предыдущего распределения)
 -------------------------------------------------------------------------------------*/
@@ -358,10 +380,9 @@ BEGIN TRANSACTION;
         RETURNING id_fd_payments into _id_fd_payments;
 
         PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 0::smallint);
-        
         PERFORM dbo.ui_fp_payment_split (p_payment_id := _id_fd_payments, p_split_type := 1::smallint);
 
-        RAISE NOTICE '--- Вызов проверки №6: Один и тот же платеж 2 раза успешно завершен ---';
+        RAISE NOTICE '--- Вызов проверки №7: Один и тот же платеж 2 раза успешно завершен ---';
     END;
     $$;
 
