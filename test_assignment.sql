@@ -40,10 +40,10 @@ CREATE TABLE dbo.fd_bills (
   id_fd_bills INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   c_number TEXT NULL,
   f_subscr INT NOT NULL,
-  c_sale_items TEXT NOT NULL, -- Услуга
+  c_sale_items TEXT NOT NULL,
   d_date DATE NOT NULL,
   n_amount NUMERIC(19,4) NOT NULL,
-  n_rest NUMERIC(19,4) NOT NULL, -- Твое имя ключа/остатка
+  n_rest NUMERIC(19,4) NOT NULL, 
   
   CONSTRAINT fk_fd_bills_sd_subscrs
         FOREIGN KEY (f_subscr) REFERENCES dbo.sd_subscrs (id_sd_subscrs) ON DELETE CASCADE
