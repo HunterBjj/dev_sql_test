@@ -1,9 +1,4 @@
-# <p align="center"> <img width="204" height="120" alt="image" src="https://github.com/user-attachments/assets/2a86fbb7-9663-468e-a47a-e989273c1544" /> </p>
-
 ###  <p align="center"> Тестовое задание </p>
-
-
-### <p align="center"> Компания: «[ООО ИСЕРВ](https://www.it-serv.ru/)»</p>
 
 
 ### <p align="center"> Позиция: Разработчик SQL </p>
