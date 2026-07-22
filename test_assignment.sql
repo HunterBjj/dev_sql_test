@@ -75,111 +75,129 @@ DECLARE
   _pay_part NUMERIC(19,4);
   _month_total_rest NUMERIC(19,4);
   _month_total_pay NUMERIC(19,4);
+  _split_fifo CONSTANT SMALLINT := 0;
+  _split_proportional CONSTANT SMALLINT := 1;
+
 BEGIN
-  BEGIN
+  SELECT f_subscr, n_amount
+  INTO _p_subscr, _p_amount
+  FROM dbo.fd_payments
+  WHERE id_fd_payments = p_payment_id
+  FOR UPDATE;
 
-    SELECT f_subscr, n_amount
-    INTO _p_subscr, _p_amount
-    FROM dbo.fd_payments
-    WHERE id_fd_payments = p_payment_id
-    FOR UPDATE;
-
-    PERFORM 1 
-    FROM dbo.fd_bills 
-    WHERE f_subscr = _p_subscr 
-    FOR UPDATE;
-    
-    IF EXISTS(SELECT 1 FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id) THEN
-      UPDATE dbo.fd_bills b
-      SET n_rest = b.n_rest + pd.n_amount
-      FROM dbo.fd_payment_details pd
-      WHERE pd.id_fd_bills = b.id_fd_bills AND pd.id_fd_payments = p_payment_id;
-      
-      DELETE FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id;
-    END IF;
-    
-    IF p_split_type = 0 THEN
-      FOR _r IN (
-         SELECT id_fd_bills , n_rest, c_sale_items
-         FROM dbo.fd_bills
-         WHERE f_subscr = _p_subscr AND n_rest > 0
-         ORDER BY d_date ASC
-      ) LOOP
-          EXIT WHEN _p_amount <= 0;
-
-          _pay_part := LEAST(_p_amount, _r.n_rest);
-          _p_amount := _p_amount - _pay_part;
-
-          INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, c_sale_items, n_amount)
-          VALUES(p_payment_id, _r.id_fd_bills, _r.c_sale_items, _pay_part);
-
-          UPDATE dbo.fd_bills
-          SET n_rest = n_rest - _pay_part
-          WHERE id_fd_bills = _r.id_fd_bills;
-    END LOOP;
-
-   ELSIF p_split_type = 1 THEN
-      FOR _r IN ( 
-          SELECT d_date
-          FROM dbo.fd_bills
-          WHERE f_subscr = _p_subscr AND n_rest > 0
-          GROUP BY d_date
-          ORDER BY d_date ASC
-      ) LOOP
-      EXIT WHEN _p_amount <= 0;
-
-      -- Счетчик общего остатка на текущий месяц.
-      SELECT SUM(n_rest) INTO _month_total_rest
-      FROM dbo.fd_bills
-      WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0;
-
-       CONTINUE WHEN _month_total_rest <= 0;
-
-      _month_total_pay := LEAST(_p_amount, _month_total_rest);
-
-      WITH calc AS (
-          SELECT 
-              id_fd_bills,
-              c_sale_items,
-              n_rest,
-              ROUND((n_rest / _month_total_rest) * _month_total_pay, 4) AS calc_pay,
-              ROW_NUMBER() OVER (ORDER BY id_fd_bills DESC) as rn
-          FROM dbo.fd_bills
-          WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0
-      ),
-      adjusted AS (
-          SELECT 
-              id_fd_bills,
-              c_sale_items,
-              CASE 
-                  WHEN rn = 1 THEN _month_total_pay - COALESCE(
-                      SUM(calc_pay) OVER (ORDER BY rn DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 
-                      0
-                  )
-                  ELSE calc_pay
-              END AS final_pay
-          FROM calc
-      ),
-      inserted_rows AS (
-          INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, c_sale_items, n_amount)
-          SELECT p_payment_id, id_fd_bills, c_sale_items, final_pay 
-          FROM adjusted
-          RETURNING id_fd_bills, n_amount
-      )
-
-      UPDATE dbo.fd_bills b
-      SET n_rest = b.n_rest - ins.n_amount
-      FROM inserted_rows ins
-      WHERE b.id_fd_bills = ins.id_fd_bills;
-
-      _p_amount := _p_amount - _month_total_pay;
-    END LOOP;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Платеж с ID = % не найден в системе.', p_payment_id
+      USING ERRCODE = 'no_data_found';
   END IF;
-END;
+
+  PERFORM 1 
+  FROM dbo.fd_bills 
+  WHERE f_subscr = _p_subscr 
+  AND n_rest > 0
+  FOR UPDATE;
+  
+  IF EXISTS(SELECT 1 FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id) THEN
+    UPDATE dbo.fd_bills b
+    SET n_rest = b.n_rest + pd.n_amount
+    FROM dbo.fd_payment_details pd
+    WHERE pd.id_fd_bills = b.id_fd_bills AND pd.id_fd_payments = p_payment_id;
+    
+    DELETE FROM dbo.fd_payment_details WHERE id_fd_payments = p_payment_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM dbo.fd_bills
+    WHERE n_rest < 0
+  ) THEN
+      RAISE EXCEPTION
+          'Обнаружен отрицательный остаток.';
+  END IF;
+  
+  IF p_split_type = _split_fifo THEN
+    FOR _r IN (
+       SELECT id_fd_bills , n_rest, c_sale_items
+       FROM dbo.fd_bills
+       WHERE f_subscr = _p_subscr AND n_rest > 0
+       ORDER BY d_date ASC
+    ) LOOP
+        EXIT WHEN _p_amount <= 0;
+
+        _pay_part := LEAST(_p_amount, _r.n_rest);
+        _p_amount := _p_amount - _pay_part;
+
+        INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, c_sale_items, n_amount)
+        VALUES(p_payment_id, _r.id_fd_bills, _r.c_sale_items, _pay_part);
+
+        UPDATE dbo.fd_bills
+        SET n_rest = n_rest - _pay_part
+        WHERE id_fd_bills = _r.id_fd_bills;
+  END LOOP;
+
+  ELSIF p_split_type = _split_proportional THEN
+    FOR _r IN ( 
+        SELECT d_date
+        FROM dbo.fd_bills
+        WHERE f_subscr = _p_subscr AND n_rest > 0
+        GROUP BY d_date
+        ORDER BY d_date ASC
+    ) LOOP
+    EXIT WHEN _p_amount <= 0;
+
+    -- Счетчик общего остатка на текущий месяц.
+    SELECT SUM(n_rest) INTO _month_total_rest
+    FROM dbo.fd_bills
+    WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0;
+
+     CONTINUE WHEN _month_total_rest <= 0;
+
+    _month_total_pay := LEAST(_p_amount, _month_total_rest);
+
+    WITH calc AS (
+        SELECT 
+            id_fd_bills,
+            c_sale_items,
+            n_rest,
+            ROUND((n_rest / _month_total_rest) * _month_total_pay, 4) AS calc_pay,
+            ROW_NUMBER() OVER (ORDER BY id_fd_bills DESC) as rn
+        FROM dbo.fd_bills
+        WHERE f_subscr = _p_subscr AND d_date = _r.d_date AND n_rest > 0
+    ),
+    adjusted AS (
+        SELECT 
+            id_fd_bills,
+            c_sale_items,
+            CASE 
+                WHEN rn = 1 THEN _month_total_pay - COALESCE(
+                    SUM(calc_pay) OVER (ORDER BY rn DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 
+                    0
+                )
+                ELSE calc_pay
+            END AS final_pay
+        FROM calc
+    ),
+    inserted_rows AS (
+        INSERT INTO dbo.fd_payment_details(id_fd_payments, id_fd_bills, c_sale_items, n_amount)
+        SELECT p_payment_id, id_fd_bills, c_sale_items, final_pay 
+        FROM adjusted
+        RETURNING id_fd_bills, n_amount
+    )
+
+    UPDATE dbo.fd_bills b
+    SET n_rest = b.n_rest - ins.n_amount
+    FROM inserted_rows ins
+    WHERE b.id_fd_bills = ins.id_fd_bills;
+
+    _p_amount := _p_amount - _month_total_pay;
+  END LOOP;
+ END IF;
 
 EXCEPTION 
     WHEN OTHERS THEN
-      RAISE EXCEPTION 'Ошибка: % (Код: %)', SQLERRM, SQLSTATE;
+       RAISE USING 
+            MESSAGE = format('Критическая ошибка в ui_fp_payment_split: %s. Контекст: %s', SQLERRM, PG_EXCEPTION_CONTEXT),
+            DETAIL = 'Дополнительные детали, если нужны',
+            ERRCODE = SQLSTATE;
 END;
 $$ LANGUAGE plpgsql;
 
